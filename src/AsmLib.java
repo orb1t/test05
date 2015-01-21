@@ -750,17 +750,20 @@ public class AsmLib {
 							Block last = blocks.get(blocks.size() - 1);
 							blocks.add(new Block("", parent));
 							parent.child = blocks.get(blocks.size() - 1);
+							whitespace = true;
 						} else {
-							parent = blocks.get(0);
+							parent = blocks.get(blocks.size() - 1);
+							parent.tokens.add("##" + parent.blocks.size());
+							//buffer = new StringBuffer("##" + blocks.size());
 							blocks.add(new Block(buffer.toString(), parent));
-							parent.child = blocks.get(blocks.size() - 1);
+							parent.blocks.add(blocks.get(blocks.size() - 1));
 						}
-						whitespace = true;
 						paren = false;
 					} else if (c == '}') {
 						if (buffer.length() > 0) {
 							blocks.get(blocks.size() - 1).tokens.add(buffer.toString());
 						}
+						//blocks.get(blocks.size() - 1).parent.blocks.add(blocks.get(blocks.size() - 1));
 						blocksDone.add(blocks.remove(blocks.size() - 1));
 						whitespace = true;
 					} else if (c == '"') {
@@ -1037,6 +1040,50 @@ public class AsmLib {
 		return out;
 	}
 
+	public ArrayList<Byte> aload_(int index) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.add(last.get("aload").byteValue());
+		out.add((byte) (index & 0xFF));
+		returnValue.set("A");
+		addStack(1);
+		return out;
+	}
+
+	public ArrayList<Byte> smartLoad_(String type, int index) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		if (type.startsWith("L") || type.startsWith("[")) {
+			out.add(last.get("aload").byteValue());
+		} else {
+			out.add(last.get(type.toLowerCase() + "load").byteValue());
+		}
+		out.add((byte) (index & 0xFF));
+		returnValue.set("A");
+		addStack(1);
+		return out;
+	}
+
+	public ArrayList<Byte> astore_(int index) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.add(last.get("astore").byteValue());
+		out.add((byte) (index & 0xFF));
+		returnValue.set("A");
+		addStack(1);
+		return out;
+	}
+
+	public ArrayList<Byte> smartStore_(String type, int index) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		if (type.startsWith("L") || type.startsWith("[")) {
+			out.add(last.get("astore").byteValue());
+		} else {
+			out.add(last.get(type.toLowerCase() + "store").byteValue());
+		}
+		out.add((byte) (index & 0xFF));
+		returnValue.set("A");
+		addStack(1);
+		return out;
+	}
+
 	public ArrayList<Byte> super_(String clazz, String methodName, String methodType) {
 		ArrayList<Byte> out = new ArrayList<Byte>();
 		out.addAll(invokeSpecial(clazz, methodName, methodType));
@@ -1098,6 +1145,7 @@ public class AsmLib {
 	public ArrayList<Byte> println(ArrayList<Byte> ... args) {
 		ArrayList<Byte> out = new ArrayList<Byte>();
 		String type = returnValue.get();
+		if (type.length() > 1) type = "Ljava/lang/Object;";
 		out.addAll(callFieldRef("java/lang/System", ref(nameAndType("out", "Ljava/io/PrintStream;"))));
 		out.addAll(args[0]);
 		out.addAll(invokeVirtual(ref(methodRef(ref(classInfo(ref(utfStr("java/io/PrintStream")))), ref(nameAndType("println", "(" + type + ")V"))))));
