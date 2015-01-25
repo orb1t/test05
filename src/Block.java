@@ -184,6 +184,13 @@ public class Block extends AsmLib {
 						blockLabel = child.tokens.get(tokenIndex.incrementAndGet());
 					}
 					if (blockLabel.startsWith("##")) {
+						int minVal = Integer.parseInt(val);
+						int maxVal = Integer.parseInt(max);
+						if (min < max) {
+							//out.addAll();
+						} else {
+							//out.addAll();
+						} 
 						int blockIndex = Integer.parseInt(blockLabel.substring(2));
 						Block b = blocks.get(blockIndex);
 						for (int i = 0 ; i < b.tokens.size() ; i ++) {
