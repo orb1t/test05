@@ -186,7 +186,7 @@ public class Block extends AsmLib {
 					if (blockLabel.startsWith("##")) {
 						int minVal = Integer.parseInt(val);
 						int maxVal = Integer.parseInt(max);
-						if (min < max) {
+						if (minVal < maxVal) {
 							//out.addAll();
 						} else {
 							//out.addAll();
@@ -201,6 +201,18 @@ public class Block extends AsmLib {
 					}
 				}
 			}
+		} else if (thisToken.equals("+")) {
+		} else if (thisToken.equals("-")) {
+		} else if (thisToken.equals("/")) {
+		} else if (thisToken.equals("*")) {
+		} else if (thisToken.equals("%")) {
+		} else if (thisToken.equals("++")) {
+		} else if (thisToken.equals("--")) {
+		} else if (thisToken.equals("&&")) {
+		} else if (thisToken.equals("||")) {
+		} else if (thisToken.equals("&")) {
+		} else if (thisToken.equals("|")) {
+		} else if (thisToken.equals("^")) {
 		} else if (localMap.containsKey(thisToken)) {
 			//ArrayList<Byte> bytes = aload_(localIndex.get(thisToken));
 			String loadType = localMap.get(thisToken);
