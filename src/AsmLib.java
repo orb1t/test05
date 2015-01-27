@@ -1,3 +1,4 @@
+import com.sun.corba.se.impl.io.TypeMismatchException;
 import com.sun.org.apache.xpath.internal.operations.Bool;
 
 import java.io.*;
@@ -1241,6 +1242,45 @@ public class AsmLib {
 		out.addAll(clazzRef);
 		out.addAll(nameAndTypeRef);
 		ensureHeaderConst(out);
+		return out;
+	}
+
+	public ArrayList<Byte> lessThan_(int branchOffset) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.add(last.get("iflt").byteValue());
+		out.add((byte) ((branchOffset & 0xFF00) >>> 8));
+		out.add((byte) (branchOffset & 0xFF));
+		return out;
+	}
+
+	public ArrayList<Byte> lessThanEqual_(int branchOffset) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.add(last.get("ifle").byteValue());
+		out.add((byte) ((branchOffset & 0xFF00) >>> 8));
+		out.add((byte) (branchOffset & 0xFF));
+		return out;
+	}
+
+	public ArrayList<Byte> greaterThan_(int branchOffset) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.add(last.get("ifgt").byteValue());
+		out.add((byte) ((branchOffset & 0xFF00) >>> 8));
+		out.add((byte) (branchOffset & 0xFF));
+		return out;
+	}
+
+	public ArrayList<Byte> greaterThanEqual_(int branchOffset) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.add(last.get("ifge").byteValue());
+		out.add((byte) ((branchOffset & 0xFF00) >>> 8));
+		out.add((byte) (branchOffset & 0xFF));
+		return out;
+	}
+	public ArrayList<Byte> subtract_() {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		String type = returnValue.get();
+		if (type.length() > 1) throw new TypeMismatchException("Can't subtract non number types");
+		out.add(last.get("ifge").byteValue());
 		return out;
 	}
 

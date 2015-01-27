@@ -1,3 +1,5 @@
+import jdk.nashorn.internal.runtime.regexp.joni.exception.SyntaxException;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -152,9 +154,11 @@ public class Block extends AsmLib {
 			String val = child.tokens.get(tokenIndex.get() + 1);
 			tokenIndex.getAndIncrement();
 			out.addAll(translateToken(val, tokenIndex, localMap, localIndex, blockLocals));
-			localMap.put(var, returnValue.get());
-			out.addAll(smartStore_(returnValue.get(), localIndex.size()));
-			localIndex.put(var, localIndex.size());
+			if (!localMap.containsKey(var)) {
+				localMap.put(var, returnValue.get());
+				localIndex.put(var, localIndex.size());
+			}
+			out.addAll(smartStore_(returnValue.get(), localIndex.get(var)));
 			locals.set(locals.get() + 1);
 		} else if (thisToken.startsWith("\"") && thisToken.endsWith("\"")) {
 			out.addAll(string(thisToken.substring(1, thisToken.length() - 1)));
@@ -175,29 +179,38 @@ public class Block extends AsmLib {
 					localIndex.put(var, localIndex.size());
 					locals.set(locals.get() + 1);
 					String mod = child.tokens.get(tokenIndex.incrementAndGet());
-					String max = child.tokens.get(tokenIndex.incrementAndGet());
-					int label = this.byteLength + out.size();
-					String blockLabel = child.tokens.get(tokenIndex.incrementAndGet());
-					int increment = 1;
-					if (blockLabel.equals("by")) {
-						increment = Integer.parseInt(child.tokens.get(tokenIndex.incrementAndGet()));
-						blockLabel = child.tokens.get(tokenIndex.incrementAndGet());
-					}
-					if (blockLabel.startsWith("##")) {
-						int minVal = Integer.parseInt(val);
-						int maxVal = Integer.parseInt(max);
-						if (minVal < maxVal) {
-							//out.addAll();
-						} else {
-							//out.addAll();
-						} 
-						int blockIndex = Integer.parseInt(blockLabel.substring(2));
-						Block b = blocks.get(blockIndex);
-						for (int i = 0 ; i < b.tokens.size() ; i ++) {
-							AtomicInteger newIndex = new AtomicInteger(0);
-							out.addAll(translateToken(b.tokens.get(i), newIndex, localMap, localIndex, blockLocals));
-							System.out.println("");
+					if (mod.equals("..")) {
+						String max = child.tokens.get(tokenIndex.incrementAndGet());
+						int label = this.byteLength + out.size();
+						String blockLabel = child.tokens.get(tokenIndex.incrementAndGet());
+						int increment = 1;
+						if (blockLabel.equals("by")) {
+							increment = Integer.parseInt(child.tokens.get(tokenIndex.incrementAndGet()));
+							blockLabel = child.tokens.get(tokenIndex.incrementAndGet());
 						}
+						if (blockLabel.startsWith("##")) {
+							int minVal = Integer.parseInt(val);
+							int maxVal = Integer.parseInt(max);
+							if (minVal < maxVal) {
+								out.addAll(integer(maxVal));
+								out.addAll(smartLoad_(localMap.get(var), localIndex.get(var)));
+								out.addAll(lessThan_(0));
+							} else {
+								out.addAll(integer(maxVal));
+								out.addAll(smartLoad_(localMap.get(var), localIndex.get(var)));
+							}
+							int blockIndex = Integer.parseInt(blockLabel.substring(2));
+							Block b = blocks.get(blockIndex);
+							for (int i = 0; i < b.tokens.size(); i++) {
+								AtomicInteger newIndex = new AtomicInteger(0);
+								out.addAll(translateToken(b.tokens.get(i), newIndex, localMap, localIndex, blockLocals));
+								System.out.println("");
+							}
+						} else {
+							throw new SyntaxException("single line for not yet implemented");
+						}
+					} else {
+						throw new SyntaxException("invalid for loop modifier");
 					}
 				}
 			}
