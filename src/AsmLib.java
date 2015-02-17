@@ -706,6 +706,7 @@ public class AsmLib {
 			boolean whitespace = false;
 			boolean quotes = false;
 			boolean paren = false;
+			boolean comment = false;
 
 			ArrayList<Block> blocks = new ArrayList<Block>();
 			ArrayList<Block> blocksDone = new ArrayList<Block>();
@@ -715,11 +716,18 @@ public class AsmLib {
 
 			int c = -1;
 			while ((c = input.read()) != -1) {
-				if (!quotes && (c == ' ' || c == '\n' || c == '\r' || c == '\t')) {
+				if (!quotes && (comment || c == ' ' || c == '\n' || c == '\r' || c == '\t')) {
 					if (!whitespace) {
 						if (buffer.length() > 0) {
-							blocks.get(blocks.size() - 1).tokens.add(buffer.toString());
+							if (buffer.toString().startsWith("//")) {
+								comment = true;
+							} else {
+								blocks.get(blocks.size() - 1).tokens.add(buffer.toString());
+							}
 						}
+					}
+					if (c == '\n') {
+						comment = false;
 					}
 					whitespace = true;
 				} else {
@@ -826,6 +834,11 @@ public class AsmLib {
 	public static ThreadLocal<Boolean> hasSuperClass = new ThreadLocal<Boolean>();
 	public static ThreadLocal<Integer> superClass = new ThreadLocal<Integer>();
 	public static HashMap<Integer, String> strVal = new HashMap<Integer, String>();
+	public static ThreadLocal<Boolean> hasStackMapTable = new ThreadLocal<Boolean>();
+	public static ThreadLocal<ArrayList<ArrayList<Byte>>> stackMapTable = new ThreadLocal<ArrayList<ArrayList<Byte>>>();
+	public static ThreadLocal<Boolean> hasLocalVariableTable = new ThreadLocal<Boolean>();
+	public static ThreadLocal<ArrayList<ArrayList<Byte>>> localVariableTable = new ThreadLocal<ArrayList<ArrayList<Byte>>>();
+
 
 	public void init() {
 		header.set(new ArrayList<ArrayList<Byte>>());
@@ -834,6 +847,8 @@ public class AsmLib {
 		hasLocals.set(false);
 		hasSuperClass.set(false);
 		stack.set(new Integer(0));
+		hasStackMapTable.set(false);
+		hasLocalVariableTable.set(false);
 	}
 
 	public class AsmClass {
@@ -993,6 +1008,20 @@ public class AsmLib {
 		temp.add(last.get("return").byteValue());
 
 		int attributeLength = temp.size() + 12;
+
+		if (hasLocalVariableTable.get()) {
+			for (ArrayList<Byte> entry : localVariableTable.get()) {
+				attributeLength += entry.size();
+			}
+			attributeLength += 8;
+		}
+		if (hasStackMapTable.get()) {
+			for (ArrayList<Byte> entry : stackMapTable.get()) {
+				attributeLength += entry.size();
+			}
+			attributeLength += 8;
+		}
+
 		out.add((byte) ((attributeLength & 0xFF000000) >>> 24)); // attr length upper high
 		out.add((byte) ((attributeLength & 0xFF0000) >>> 16)); // attr length upper low
 		out.add((byte) ((attributeLength & 0xFF00) >>> 8)); // attr length high
@@ -1021,7 +1050,93 @@ public class AsmLib {
 		out.add(new Byte((byte) 0)); // exception_table_length high
 		out.add(new Byte((byte) 0)); // exception_table_length low
 		out.add(new Byte((byte) 0)); // attributes_count high
-		out.add(new Byte((byte) 0)); // attributes_count low
+		out.add(new Byte((byte) ((hasStackMapTable.get() ? 1 : 0) + (hasLocalVariableTable.get() ? 1 : 0)))); // attributes_count low
+		if (hasLocalVariableTable.get()) out.addAll(localVariableTable());
+		if (hasStackMapTable.get()) out.addAll(stackMapTable());
+		return out;
+	}
+
+	private ArrayList<Byte> localVariableTable() {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.addAll(ref(utfStr("LocalVariableTable")));
+
+		int local_variable_table_length = 0;
+		ArrayList<Byte> entriesCollection = new ArrayList<Byte>();
+		for (ArrayList<Byte> entry : localVariableTable.get()) {
+			entriesCollection.addAll(entry);
+			local_variable_table_length ++;
+		}
+
+		int attributeLength = entriesCollection.size() + 2; // num entries + entries length
+		out.add((byte) ((attributeLength & 0xFF000000) >>> 24)); // attr length upper high
+		out.add((byte) ((attributeLength & 0xFF0000) >>> 16)); // attr length upper low
+		out.add((byte) ((attributeLength & 0xFF00) >>> 8)); // attr length high
+		out.add((byte) (attributeLength & 0xFF)); // attr length low
+
+		out.add((byte) ((local_variable_table_length & 0xFF00) >>> 8)); // local_variable_table_length high
+		out.add((byte) (local_variable_table_length & 0xFF)); // local_variable_table_length low
+		out.addAll(entriesCollection);
+		return out;
+	}
+
+	public class LocalVariable {
+		Byte[]  start_pc = new Byte[2],
+				length = new Byte[2],
+				name_index = new Byte[2],
+				descriptor_index = new Byte[2],
+				index = new Byte[2];
+		public LocalVariable(int start, int length, ArrayList<Byte> name_index,
+		                     ArrayList<Byte> descriptor_index, int index) {
+			start_pc[0] = new Byte((byte) ((start & 0xff00) >>> 8));
+			start_pc[1] = new Byte((byte) (start & 0xff));
+			this.length[0] = new Byte((byte) ((length & 0xff00) >>> 8));
+			this.length[1] = new Byte((byte) (length & 0xff));
+			this.name_index[0] = name_index.get(0);
+			this.name_index[1] = name_index.get(1);
+			this.descriptor_index[0] = descriptor_index.get(0);
+			this.descriptor_index[1] = descriptor_index.get(1);
+			this.index[0] = new Byte((byte) ((index & 0xff00) >>> 8));
+			this.index[1] = new Byte((byte) (index & 0xff));
+		}
+		public ArrayList<Byte> getBytes() {
+			return new ArrayList<Byte>() {{
+				addAll(Arrays.asList(start_pc));
+				addAll(Arrays.asList(length));
+				addAll(Arrays.asList(name_index));
+				addAll(Arrays.asList(descriptor_index));
+				addAll(Arrays.asList(index));
+			}};
+		}
+	}
+
+	private ArrayList<Byte> stackMapTable() {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.addAll(ref(utfStr("StackMapTable")));
+
+		int num_entries = 0;
+		ArrayList<Byte> entriesCollection = new ArrayList<Byte>();
+		for (ArrayList<Byte> entry : stackMapTable.get()) {
+			entriesCollection.addAll(entry);
+			num_entries ++;
+		}
+
+		int attributeLength = entriesCollection.size() + 2; // num entries + entries length
+		out.add((byte) ((attributeLength & 0xFF000000) >>> 24)); // attr length upper high
+		out.add((byte) ((attributeLength & 0xFF0000) >>> 16)); // attr length upper low
+		out.add((byte) ((attributeLength & 0xFF00) >>> 8)); // attr length high
+		out.add((byte) (attributeLength & 0xFF)); // attr length low
+
+		out.add((byte) ((num_entries & 0xFF00) >>> 8)); // num entries high
+		out.add((byte) (num_entries & 0xFF)); // num entries low
+		out.addAll(entriesCollection);
+		return out;
+	}
+
+	public ArrayList<Byte> attributeSameFrameExtended_(int offset_delta) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.add((byte) 251); // SAME_FRAME_EXTENDED
+		out.add((byte) ((offset_delta & 0xff00) >>> 8));
+		out.add((byte) (offset_delta & 0xff));
 		return out;
 	}
 
@@ -1269,6 +1384,38 @@ public class AsmLib {
 		return out;
 	}
 
+	public ArrayList<Byte> ifCompareGreaterThan_(int branchOffset) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.add(last.get("if_icmpgt").byteValue());
+		out.add((byte) ((branchOffset & 0xFF00) >>> 8));
+		out.add((byte) (branchOffset & 0xFF));
+		return out;
+	}
+
+	public ArrayList<Byte> ifCompareLessThan_(int branchOffset) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.add(last.get("if_icmplt").byteValue());
+		out.add((byte) ((branchOffset & 0xFF00) >>> 8));
+		out.add((byte) (branchOffset & 0xFF));
+		return out;
+	}
+
+	public ArrayList<Byte> goto_(int branchOffset) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.add(last.get("goto").byteValue());
+		out.add((byte) ((branchOffset & 0xFF00) >>> 8));
+		out.add((byte) (branchOffset & 0xFF));
+		return out;
+	}
+
+	public ArrayList<Byte> iinc_(int varIndex, int amount) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.add(last.get("iinc").byteValue());
+		out.add((byte) varIndex);
+		out.add((byte) (amount & 0xff));
+		return out;
+	}
+
 	public ArrayList<Byte> greaterThanEqual_(int branchOffset) {
 		ArrayList<Byte> out = new ArrayList<Byte>();
 		out.add(last.get("ifge").byteValue());
@@ -1280,7 +1427,15 @@ public class AsmLib {
 		ArrayList<Byte> out = new ArrayList<Byte>();
 		String type = returnValue.get();
 		if (type.length() > 1) throw new TypeMismatchException("Can't subtract non number types");
-		out.add(last.get("ifge").byteValue());
+		out.add(last.get(type.toLowerCase() + "sub").byteValue());
+		return out;
+	}
+
+	public ArrayList<Byte> jsr_(int branchOffset) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		out.add(last.get("jsr").byteValue());
+		out.add((byte) ((branchOffset & 0xFF00) >>> 8));
+		out.add((byte) (branchOffset & 0xFF));
 		return out;
 	}
 

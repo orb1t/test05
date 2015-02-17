@@ -106,6 +106,10 @@ public class Block extends AsmLib {
 				Method method = new Method(methodHeader);
 				hasLocals.set(true);
 				locals.set((block.tokens.size() / 2) + 1);
+				hasStackMapTable.set(false);
+				stackMapTable.set(new ArrayList<ArrayList<Byte>>());
+				hasLocalVariableTable.set(false);
+				localVariableTable.set(new ArrayList<ArrayList<Byte>>());
 				ArrayList<Byte> methodCode = method.create(block.asMethod(argMap));
 				code.addAll(methodCode);
 			}
@@ -140,15 +144,7 @@ public class Block extends AsmLib {
 		if (thisToken.startsWith("##")) {
 			int index = Integer.parseInt(thisToken.substring(2));
 			Block block = child.blocks.get(index);
-			if (block.label.equals("println")) {
-				String token = block.tokens.get(0);
-				tokenIndex.getAndIncrement();
-				out.addAll(println(translateToken(token, tokenIndex, localMap, localIndex, blockLocals)));
-			} else if (block.label.equals("print")) {
-				String token = block.tokens.get(0);
-				tokenIndex.getAndIncrement();
-				out.addAll(print(translateToken(token, tokenIndex, localMap, localIndex, blockLocals)));
-			}
+			out.addAll(getByLabel(block, thisToken, tokenIndex, localMap, localIndex, blockLocals));
 		} else if (thisToken.equals("=")) {
 			String var = child.tokens.get(tokenIndex.get() - 1);
 			String val = child.tokens.get(tokenIndex.get() + 1);
@@ -191,21 +187,46 @@ public class Block extends AsmLib {
 						if (blockLabel.startsWith("##")) {
 							int minVal = Integer.parseInt(val);
 							int maxVal = Integer.parseInt(max);
+							int localOffsetLabel = -1;
+							int incMod = 0;
 							if (minVal < maxVal) {
-								out.addAll(integer(maxVal));
 								out.addAll(smartLoad_(localMap.get(var), localIndex.get(var)));
-								out.addAll(lessThan_(0));
+								out.addAll(integer(maxVal));
+								localOffsetLabel = out.size() + 1;
+								out.addAll(ifCompareGreaterThan_(0));
+								incMod = 1;
 							} else {
-								out.addAll(integer(maxVal));
 								out.addAll(smartLoad_(localMap.get(var), localIndex.get(var)));
+								out.addAll(integer(maxVal));
+								localOffsetLabel = out.size() + 1;
+								out.addAll(ifCompareLessThan_(0));
+								incMod = -1;
 							}
 							int blockIndex = Integer.parseInt(blockLabel.substring(2));
-							Block b = blocks.get(blockIndex);
+							Block b = child.blocks.get(blockIndex);
+							int blockLength = 0;
 							for (int i = 0; i < b.tokens.size(); i++) {
 								AtomicInteger newIndex = new AtomicInteger(0);
-								out.addAll(translateToken(b.tokens.get(i), newIndex, localMap, localIndex, blockLocals));
+								ArrayList<Byte> newTokens = translateToken(b.tokens.get(i), newIndex, localMap, localIndex, blockLocals);
+								blockLength += newTokens.size();
+								out.addAll(newTokens);
 								System.out.println("");
 							}
+							out.addAll(iinc_(localIndex.get(var).intValue(), incMod)); // 3 bytes long
+							out.addAll(goto_(-(label + 6))); // 2 bytes long
+							int newOffset = blockLength + 9; // add offset for test, inc, and goto
+							out.set(localOffsetLabel, (byte) ((newOffset & 0xff00) >>> 8));
+							out.set(localOffsetLabel + 1, (byte) (newOffset & 0xff));
+							hasStackMapTable.set(true);
+							stackMapTable.get().add(attributeSameFrameExtended_(label));
+							stackMapTable.get().add(attributeSameFrameExtended_(newOffset + 4 - 1));
+							hasLocalVariableTable.set(true);
+							LocalVariable localVariable = new LocalVariable(
+									label - 2, newOffset + 6,
+									ref(utfStr(var)), ref(utfStr(localMap.get(var))),
+									localIndex.get(var)
+							);
+							localVariableTable.get().add(localVariable.getBytes());
 						} else {
 							throw new SyntaxException("single line for not yet implemented");
 						}
@@ -216,6 +237,9 @@ public class Block extends AsmLib {
 			}
 		} else if (thisToken.equals("+")) {
 		} else if (thisToken.equals("-")) {
+			String nextToken = child.tokens.get(tokenIndex.incrementAndGet());
+			out.addAll(translateToken(nextToken, tokenIndex, localMap, localIndex, blockLocals));
+			out.addAll(subtract_());
 		} else if (thisToken.equals("/")) {
 		} else if (thisToken.equals("*")) {
 		} else if (thisToken.equals("%")) {
@@ -227,11 +251,36 @@ public class Block extends AsmLib {
 		} else if (thisToken.equals("|")) {
 		} else if (thisToken.equals("^")) {
 		} else if (localMap.containsKey(thisToken)) {
-			//ArrayList<Byte> bytes = aload_(localIndex.get(thisToken));
-			String loadType = localMap.get(thisToken);
-			ArrayList<Byte> bytes = smartLoad_(loadType, localIndex.get(thisToken));
-			returnValue.set(localMap.get(thisToken));
-			out.addAll(bytes);
+			if (!child.tokens.get(tokenIndex.get() + 1).equals("=")) {
+				//ArrayList<Byte> bytes = aload_(localIndex.get(thisToken));
+				String loadType = localMap.get(thisToken);
+				ArrayList<Byte> bytes = smartLoad_(loadType, localIndex.get(thisToken));
+				returnValue.set(localMap.get(thisToken));
+				out.addAll(bytes);
+			}
+		}
+		return out;
+	}
+
+	private ArrayList<Byte> getByLabel(Block block, String thisToken, AtomicInteger tokenIndex, LinkedHashMap<String, String> localMap, LinkedHashMap<String, Integer> localIndex, Stack<ArrayList<String>> blockLocals) {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		if (block.label.equals("println")) {
+			String token = block.tokens.get(0);
+			tokenIndex.getAndIncrement();
+			out.addAll(println(translateToken(token, tokenIndex, localMap, localIndex, blockLocals)));
+		} else if (block.label.equals("print")) {
+			String token = block.tokens.get(0);
+			tokenIndex.getAndIncrement();
+			out.addAll(print(translateToken(token, tokenIndex, localMap, localIndex, blockLocals)));
+		} else if (block.tokens.size() > 0) {
+			for (int i = 0 ; i < block.tokens.size() ; i ++) {
+				if (block.tokens.get(i).startsWith("##")) {
+					int blockIndex = Integer.parseInt(block.tokens.get(i).substring(2));
+					AtomicInteger newIndex = new AtomicInteger(0);
+					Block currentBlock = block.blocks.get(blockIndex);
+					out.addAll(getByLabel(currentBlock, thisToken, newIndex, localMap, localIndex, blockLocals));
+				}
+			}
 		}
 		return out;
 	}
