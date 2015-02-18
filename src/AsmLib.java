@@ -1214,14 +1214,6 @@ public class AsmLib {
 		return out;
 	}
 
-	public ArrayList<Byte> add(ArrayList<Byte> ... args) {
-		ArrayList<Byte> out = new ArrayList<Byte>();
-		String type = returnValue.get();
-		out.add(last.get(type.toLowerCase() + "add").byteValue());
-		addStack(-1);
-		return out;
-	}
-
 	public ArrayList<Byte> string(String val) {
 		ArrayList<Byte> out = new ArrayList<Byte>();
 		out.add(last.get("ldc").byteValue());
@@ -1428,6 +1420,16 @@ public class AsmLib {
 		String type = returnValue.get();
 		if (type.length() > 1) throw new TypeMismatchException("Can't subtract non number types");
 		out.add(last.get(type.toLowerCase() + "sub").byteValue());
+		addStack(-1);
+		return out;
+	}
+
+	public ArrayList<Byte> add_() {
+		ArrayList<Byte> out = new ArrayList<Byte>();
+		String type = returnValue.get();
+		if (type.length() > 1) throw new TypeMismatchException("Can't add non number types");
+		out.add(last.get(type.toLowerCase() + "add").byteValue());
+		addStack(-1);
 		return out;
 	}
 

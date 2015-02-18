@@ -150,6 +150,10 @@ public class Block extends AsmLib {
 			String val = child.tokens.get(tokenIndex.get() + 1);
 			tokenIndex.getAndIncrement();
 			out.addAll(translateToken(val, tokenIndex, localMap, localIndex, blockLocals));
+			while (child.tokens.get(tokenIndex.get() + 1).matches("\\+|-|/|\\*|\\%|\\+\\+|--|&&|\\|\\|")) {
+				tokenIndex.getAndIncrement();
+				out.addAll(translateToken(child.tokens.get(tokenIndex.get()), tokenIndex, localMap, localIndex, blockLocals));
+			}
 			if (!localMap.containsKey(var)) {
 				localMap.put(var, returnValue.get());
 				localIndex.put(var, localIndex.size());
@@ -236,6 +240,9 @@ public class Block extends AsmLib {
 				}
 			}
 		} else if (thisToken.equals("+")) {
+			String nextToken = child.tokens.get(tokenIndex.incrementAndGet());
+			out.addAll(translateToken(nextToken, tokenIndex, localMap, localIndex, blockLocals));
+			out.addAll(add_());
 		} else if (thisToken.equals("-")) {
 			String nextToken = child.tokens.get(tokenIndex.incrementAndGet());
 			out.addAll(translateToken(nextToken, tokenIndex, localMap, localIndex, blockLocals));
